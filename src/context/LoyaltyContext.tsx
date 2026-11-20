@@ -11,6 +11,8 @@ import type {
   TransactionSource,
   PaymentMethod,
   PaymentStatus,
+  DemoProduct,
+  CartItem,
 } from '../types/loyalty';
 import {
   DEFAULT_LOYALTY_CONFIG,
@@ -18,6 +20,7 @@ import {
   SEED_TRANSACTIONS,
   SEED_SALES,
   SEED_WEBHOOK_EVENTS,
+  DEMO_PRODUCTS,
 } from '../data/seedData';
 import {
   calculatePoints as engineCalculatePoints,
@@ -31,7 +34,7 @@ const TRANSACTIONS_STORAGE_KEY = 'trove_loyalty_transactions_v2';
 const SALES_STORAGE_KEY = 'trove_loyalty_sales_v2';
 const WEBHOOKS_STORAGE_KEY = 'trove_loyalty_webhooks_v2';
 
-export type PortalView = 'admin' | 'store' | 'online' | 'wallet';
+export type PortalView = 'overview' | 'store' | 'online' | 'wallet' | 'admin';
 export type AdminTab = 'overview' | 'rules' | 'customers' | 'transactions' | 'integrations' | 'settings';
 
 interface LoyaltyContextType {
@@ -49,6 +52,26 @@ interface LoyaltyContextType {
   transactions: LoyaltyTransaction[];
   sales: SaleOrder[];
   webhookEvents: ShopifyWebhookEvent[];
+
+  // Shopping Cart & Online E-commerce Simulation
+  cart: CartItem[];
+  addToCart: (product: DemoProduct, size?: string) => void;
+  removeFromCart: (productId: string, size?: string) => void;
+  updateCartQuantity: (productId: string, quantity: number, size?: string) => void;
+  clearCart: () => void;
+  processOnlinePurchase: (params: {
+    customerId: string;
+    subtotal: number;
+    pointsToRedeem: number;
+    itemsSummary?: string;
+  }) => {
+    success: boolean;
+    pointsEarned: number;
+    pointsRedeemed: number;
+    orderReference: string;
+    sale?: SaleOrder;
+    error?: string;
+  };
 
   // Calculation Engines (Dynamic)
   calculatePoints: (purchaseAmount: number, source?: TransactionSource) => PurchaseCalculationResult;
@@ -137,10 +160,19 @@ interface LoyaltyContextType {
 export const LoyaltyContext = createContext<LoyaltyContextType | undefined>(undefined);
 
 export const LoyaltyProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Portal navigation state
-  const [currentPortal, setCurrentPortal] = useState<PortalView>('admin');
+  // Portal navigation state - defaults to clean client Overview
+  const [currentPortal, setCurrentPortal] = useState<PortalView>('overview');
   const [adminTab, setAdminTab] = useState<AdminTab>('overview');
   const [selectedCustomerIdForWallet, setSelectedCustomerIdForWallet] = useState<string>('CUST-001');
+
+  // Shopping Bag / Cart for Online Boutique Simulation
+  const [cart, setCart] = useState<CartItem[]>([
+    {
+      product: DEMO_PRODUCTS[0], // Aegean Linen Co-ord Set
+      quantity: 1,
+      size: 'M',
+    },
+  ]);
 
   // Notifications
   const [notifications, setNotifications] = useState<Array<{ id: string; type: 'success' | 'error' | 'info'; message: string }>>([]);
@@ -849,6 +881,202 @@ export const LoyaltyProvider: React.FC<{ children: React.ReactNode }> = ({ child
     [customers, config.pointValue, currentSnapshot, showNotification]
   );
 
+  // Cart management for online shopping experience
+  const addToCart = useCallback((product: DemoProduct, size: string = 'M') => {
+    setCart((prev) => {
+      const existing = prev.find((item) => item.product.id === product.id && item.size === size);
+      if (existing) {
+        return prev.map((item) =>
+          item.product.id === product.id && item.size === size
+            ? { ...item, quantity: item.quantity + 1 }
+            : item
+        );
+      }
+      return [...prev, { product, quantity: 1, size }];
+    });
+    showNotification(`Added ${product.name} to shopping bag.`, 'success');
+  }, [showNotification]);
+
+  const removeFromCart = useCallback((productId: string, size?: string) => {
+    setCart((prev) => prev.filter((item) => !(item.product.id === productId && (!size || item.size === size))));
+  }, []);
+
+  const updateCartQuantity = useCallback((productId: string, quantity: number, size?: string) => {
+    if (quantity <= 0) {
+      removeFromCart(productId, size);
+      return;
+    }
+    setCart((prev) =>
+      prev.map((item) =>
+        item.product.id === productId && (!size || item.size === size)
+          ? { ...item, quantity }
+          : item
+      )
+    );
+  }, [removeFromCart]);
+
+  const clearCart = useCallback(() => {
+    setCart([]);
+  }, []);
+
+  // Process Online Purchase (Shopify Storefront Checkout)
+  const processOnlinePurchase = useCallback(
+    ({
+      customerId,
+      subtotal,
+      pointsToRedeem,
+      itemsSummary,
+    }: {
+      customerId: string;
+      subtotal: number;
+      pointsToRedeem: number;
+      itemsSummary?: string;
+    }) => {
+      const customer = customers.find((c) => c.id === customerId);
+      if (!customer) {
+        return { success: false, pointsEarned: 0, pointsRedeemed: 0, orderReference: '', error: 'Customer not found' };
+      }
+
+      const redemptionValidation = validateRedemption(
+        subtotal,
+        pointsToRedeem,
+        customer.currentPointsBalance
+      );
+
+      if (pointsToRedeem > 0 && !redemptionValidation.isValid) {
+        return {
+          success: false,
+          pointsEarned: 0,
+          pointsRedeemed: 0,
+          orderReference: '',
+          error: redemptionValidation.errorMessage,
+        };
+      }
+
+      const earningBaseAmount = config.earnOnRedeemedAmount
+        ? redemptionValidation.finalPayableAmount
+        : subtotal;
+
+      const earningCalc = calculatePoints(earningBaseAmount, 'Online');
+
+      const now = new Date().toISOString();
+      const generatedRef = `TL-ONL-${Math.floor(Math.random() * 89999 + 10000)}`;
+      const saleId = `SALE-WEB-${Date.now().toString().slice(-6)}`;
+      const newTransactions: LoyaltyTransaction[] = [];
+      let runningBalance = customer.currentPointsBalance;
+      let totalEarnedDelta = 0;
+      let totalRedeemedDelta = 0;
+
+      // 1. Redemption
+      if (pointsToRedeem > 0 && redemptionValidation.isValid) {
+        runningBalance -= pointsToRedeem;
+        totalRedeemedDelta += pointsToRedeem;
+        newTransactions.push({
+          id: `TXN-${Date.now()}-${Math.floor(Math.random() * 900 + 100)}`,
+          customerId: customer.id,
+          customerName: customer.name,
+          customerMobile: customer.mobileNumber,
+          type: 'redeem',
+          source: 'Online',
+          saleId,
+          purchaseAmount: subtotal,
+          pointsDelta: -pointsToRedeem,
+          pointValueSnapshot: config.pointValue,
+          monetaryValue: redemptionValidation.discountRupees,
+          balanceAfter: runningBalance,
+          earningRuleSnapshot: currentSnapshot,
+          reference: `${generatedRef}-R`,
+          createdAt: now,
+          status: 'completed',
+          notes: `Online checkout redemption (${itemsSummary || 'trovelabel.com checkout'})`,
+        });
+      }
+
+      // 2. Earn points
+      if (earningCalc.pointsEarned > 0) {
+        runningBalance += earningCalc.pointsEarned;
+        totalEarnedDelta += earningCalc.pointsEarned;
+        newTransactions.push({
+          id: `TXN-${Date.now() + 1}-${Math.floor(Math.random() * 900 + 100)}`,
+          customerId: customer.id,
+          customerName: customer.name,
+          customerMobile: customer.mobileNumber,
+          type: 'earn',
+          source: 'Online',
+          saleId,
+          purchaseAmount: earningBaseAmount,
+          pointsDelta: earningCalc.pointsEarned,
+          pointValueSnapshot: config.pointValue,
+          monetaryValue: earningCalc.monetaryRewardValue,
+          balanceAfter: runningBalance,
+          earningRuleSnapshot: currentSnapshot,
+          reference: `${generatedRef}-E`,
+          createdAt: new Date(Date.now() + 50).toISOString(),
+          status: 'completed',
+          notes: `Online order earned points (${itemsSummary || 'Resortwear purchase'})`,
+        });
+      }
+
+      // Create Sale Order Record
+      const newSale: SaleOrder = {
+        id: saleId,
+        reference: generatedRef,
+        customerId: customer.id,
+        customerName: customer.name,
+        channel: 'Online',
+        subtotal,
+        discount: redemptionValidation.discountRupees,
+        payableAmount: redemptionValidation.finalPayableAmount,
+        paymentMethod: 'Razorpay',
+        paymentStatus: 'completed',
+        pointsRedeemed: pointsToRedeem,
+        pointsEarned: earningCalc.pointsEarned,
+        createdAt: now,
+        status: 'completed',
+      };
+
+      setSales((prev) => [newSale, ...prev]);
+      setTransactions((prev) => [...newTransactions, ...prev]);
+
+      setCustomers((prev) =>
+        prev.map((c) => {
+          if (c.id === customer.id) {
+            return {
+              ...c,
+              currentPointsBalance: runningBalance,
+              lifetimePointsEarned: c.lifetimePointsEarned + totalEarnedDelta,
+              lifetimePointsRedeemed: c.lifetimePointsRedeemed + totalRedeemedDelta,
+            };
+          }
+          return c;
+        })
+      );
+
+      // Keep wallet pre-focused on this customer
+      setSelectedCustomerIdForWallet(customer.id);
+
+      // Reset cart to pristine initial state
+      setCart([
+        {
+          product: DEMO_PRODUCTS[0],
+          quantity: 1,
+          size: 'M',
+        },
+      ]);
+
+      showNotification(`Order ${generatedRef} confirmed! ${earningCalc.pointsEarned} points awarded to ${customer.name}.`, 'success');
+
+      return {
+        success: true,
+        pointsEarned: earningCalc.pointsEarned,
+        pointsRedeemed: pointsToRedeem,
+        orderReference: generatedRef,
+        sale: newSale,
+      };
+    },
+    [customers, config, currentSnapshot, calculatePoints, validateRedemption, showNotification]
+  );
+
   // Reset Demo Data
   const resetDemoData = useCallback(() => {
     localStorage.removeItem(CONFIG_STORAGE_KEY);
@@ -863,6 +1091,14 @@ export const LoyaltyProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setSales(SEED_SALES);
     setWebhookEvents(SEED_WEBHOOK_EVENTS);
     setSelectedCustomerIdForWallet('CUST-001');
+    setCurrentPortal('overview');
+    setCart([
+      {
+        product: DEMO_PRODUCTS[0],
+        quantity: 1,
+        size: 'M',
+      },
+    ]);
 
     showNotification('All demo data restored to pristine initial state.', 'info');
   }, [showNotification]);
@@ -881,6 +1117,12 @@ export const LoyaltyProvider: React.FC<{ children: React.ReactNode }> = ({ child
         transactions,
         sales,
         webhookEvents,
+        cart,
+        addToCart,
+        removeFromCart,
+        updateCartQuantity,
+        clearCart,
+        processOnlinePurchase,
         calculatePoints,
         validateRedemption,
         updateConfig,

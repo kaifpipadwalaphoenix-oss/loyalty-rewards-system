@@ -18,7 +18,25 @@ export interface LoyaltyConfig {
   updatedAt: string;
 }
 
-export type CustomerTier = 'Classic' | 'Silver' | 'Gold' | 'Platinum';
+export type CustomerTier = 'Member' | 'Classic' | 'Silver' | 'Gold' | 'Platinum';
+
+export interface DemoProduct {
+  id: string;
+  name: string;
+  category: string;
+  price: number;
+  description: string;
+  fabric: string;
+  colorName: string;
+  colorHex: string;
+  tag?: string;
+}
+
+export interface CartItem {
+  product: DemoProduct;
+  quantity: number;
+  size: string;
+}
 
 export interface Customer {
   id: string;

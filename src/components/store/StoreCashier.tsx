@@ -1,17 +1,19 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { useLoyalty } from '../../context/LoyaltyContext';
-import type { Customer, PaymentMethod, LoyaltyTransaction, SaleOrder } from '../../types/loyalty';
+import type { Customer, LoyaltyTransaction, SaleOrder } from '../../types/loyalty';
 import {
   Store,
+  UserCheck,
   UserX,
+  Coins,
   CheckCircle2,
   AlertCircle,
-  RotateCcw,
   Wallet,
   Printer,
-  CreditCard,
-  QrCode,
-  Banknote,
+  RotateCcw,
+  Plus,
+  ArrowRight,
+  Sparkles,
 } from 'lucide-react';
 
 export const StoreCashier: React.FC = () => {
@@ -28,34 +30,22 @@ export const StoreCashier: React.FC = () => {
   } = useLoyalty();
 
   // Search & Selected Customer
-  const [mobileQuery, setMobileQuery] = useState('9820123456'); // Pre-fill with Aarav Sharma for quick demo start
+  const [mobileQuery, setMobileQuery] = useState('9820123456'); // Pre-fill Aarav Sharma for quick presentation
   const [activeCustomer, setActiveCustomer] = useState<Customer | null>(() => {
     return customers.find((c) => c.mobileNumber === '9820123456') || customers[0] || null;
   });
 
-  // Purchase Details
-  const STORE_LOCATIONS = useMemo(() => [
-    { id: 'MUM', name: 'Mumbai Flagship (Colaba)' },
-    { id: 'DEL', name: 'Delhi Select (Khan Market)' },
-    { id: 'BLR', name: 'Bengaluru Concept (Indiranagar)' },
-    { id: 'HYD', name: 'Hyderabad Boutique (Banjara Hills)' },
-  ], []);
+  // Store Boutique Location
+  const [storeLocation, setStoreLocation] = useState('Colaba Flagship Boutique, Mumbai');
 
-  const [selectedStore, setSelectedStore] = useState(STORE_LOCATIONS[0]);
-  const [purchaseAmount, setPurchaseAmount] = useState<number>(2000); // Pre-fill ₹2,000 per standard scenario
-  const [billReference, setBillReference] = useState<string>(() => `POS-MUM-${Math.floor(Math.random() * 8999 + 1000)}`);
-  const storeLocation = selectedStore.name;
+  // Purchase Details
+  const [purchaseAmount, setPurchaseAmount] = useState<number>(2500);
 
   // Redemption Details
   const [isRedeeming, setIsRedeeming] = useState<boolean>(true);
-  const [pointsToRedeemInput, setPointsToRedeemInput] = useState<number>(50); // Pre-fill 50 points
+  const [pointsToRedeemInput, setPointsToRedeemInput] = useState<number>(100);
 
-  // Payment Method & Simulation
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('UPI');
-  const [paymentSimulateStatus, setPaymentSimulateStatus] = useState<'completed' | 'failed'>('completed');
-
-  // Processing state & completed receipt
-  const [isProcessing, setIsProcessing] = useState(false);
+  // Completed Receipt State
   const [completedReceipt, setCompletedReceipt] = useState<{
     customer: Customer;
     sale: SaleOrder;
@@ -65,15 +55,16 @@ export const StoreCashier: React.FC = () => {
     finalPayable: number;
     pointsEarned: number;
     newBalance: number;
-    paymentMethod: PaymentMethod;
     earningTxn?: LoyaltyTransaction;
     redemptionTxn?: LoyaltyTransaction;
     timestamp: string;
   } | null>(null);
 
-  // Quick Register Modal state if customer not found
+  // Quick Register Modal state
   const [showRegisterModal, setShowRegisterModal] = useState(false);
-  const [registerName, setRegisterName] = useState('');
+  const [newCustName, setNewCustName] = useState('');
+  const [newCustMobile, setNewCustMobile] = useState('');
+  const [newCustCity, setNewCustCity] = useState('Mumbai');
 
   // Handle Search
   const handleSearch = (e?: React.FormEvent) => {
@@ -83,7 +74,7 @@ export const StoreCashier: React.FC = () => {
       (c) =>
         c.mobileNumber === clean ||
         c.mobileNumber.endsWith(clean) ||
-        c.id.toLowerCase() === mobileQuery.toLowerCase()
+        c.name.toLowerCase().includes(mobileQuery.toLowerCase())
     );
     setActiveCustomer(found || null);
     if (!found) {
@@ -97,837 +88,699 @@ export const StoreCashier: React.FC = () => {
     setCompletedReceipt(null);
   };
 
-  // Live Calculations
-  const currentCustomerBalance = activeCustomer?.currentPointsBalance ?? 0;
+  // Calculations
+  const customerAvailablePoints = activeCustomer?.currentPointsBalance || 0;
+  const redemptionPoints = isRedeeming ? Number(pointsToRedeemInput) || 0 : 0;
 
-  // 1. Redemption Validation
-  const effectivePointsToRedeem = isRedeeming ? Number(pointsToRedeemInput) || 0 : 0;
-  const redemptionResult = useMemo(() => {
-    return validateRedemption(purchaseAmount, effectivePointsToRedeem, currentCustomerBalance);
-  }, [validateRedemption, purchaseAmount, effectivePointsToRedeem, currentCustomerBalance]);
+  const redemptionValidation = validateRedemption(
+    purchaseAmount,
+    redemptionPoints,
+    customerAvailablePoints
+  );
 
-  // 2. Points Earning Calculation
-  // Points earned on gross bill unless configured otherwise
   const earningBase = config.earnOnRedeemedAmount
-    ? redemptionResult.finalPayableAmount
+    ? redemptionValidation.finalPayableAmount
     : purchaseAmount;
 
-  const earningResult = useMemo(() => {
-    return calculatePoints(earningBase, 'Store');
-  }, [calculatePoints, earningBase]);
+  const earningCalc = calculatePoints(earningBase, 'Store');
 
-  // Final Estimated Balance after transaction
-  const estimatedNewBalance =
-    currentCustomerBalance -
-    (redemptionResult.isValid ? effectivePointsToRedeem : 0) +
-    earningResult.pointsEarned;
-
-  // Handle Transaction Confirmation
+  // Confirm Loyalty Transaction
   const handleConfirmTransaction = () => {
     if (!activeCustomer) return;
-    if (purchaseAmount <= 0) return;
-    if (isRedeeming && effectivePointsToRedeem > 0 && !redemptionResult.isValid) return;
 
-    setIsProcessing(true);
+    const result = processStoreTransaction({
+      customerId: activeCustomer.id,
+      purchaseAmount,
+      pointsToRedeem: redemptionValidation.pointsToRedeem,
+      paymentMethod: 'Card', // Staff processes payment separately
+      paymentSimulateStatus: 'completed',
+      billReference: `POS-${storeLocation.slice(0, 3).toUpperCase()}-${Date.now().toString().slice(-4)}`,
+      notes: `In-store checkout at ${storeLocation}`,
+    });
 
-    try {
-      const res = processStoreTransaction({
-        customerId: activeCustomer.id,
-        purchaseAmount,
-        pointsToRedeem: isRedeeming ? effectivePointsToRedeem : 0,
-        paymentMethod,
-        paymentSimulateStatus,
-        billReference,
-        notes: `In-store purchase at ${storeLocation} via ${paymentMethod}`,
+    if (result.success && result.sale) {
+      const updatedCust = customers.find((c) => c.id === activeCustomer.id) || activeCustomer;
+      const expectedBalance =
+        activeCustomer.currentPointsBalance -
+        redemptionValidation.pointsToRedeem +
+        earningCalc.pointsEarned;
+
+      setCompletedReceipt({
+        customer: updatedCust,
+        sale: result.sale,
+        originalBill: purchaseAmount,
+        pointsRedeemed: redemptionValidation.pointsToRedeem,
+        discountRupees: redemptionValidation.discountRupees,
+        finalPayable: redemptionValidation.finalPayableAmount,
+        pointsEarned: earningCalc.pointsEarned,
+        newBalance: expectedBalance,
+        earningTxn: result.earningTxn,
+        redemptionTxn: result.redemptionTxn,
+        timestamp: new Date().toLocaleTimeString('en-IN', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        }),
       });
 
-      if (res.success && res.sale) {
-        const updated = customers.find((c) => c.id === activeCustomer.id) || activeCustomer;
-
-        setCompletedReceipt({
-          customer: {
-            ...updated,
-            currentPointsBalance: estimatedNewBalance,
-          },
-          sale: res.sale,
-          originalBill: purchaseAmount,
-          pointsRedeemed: isRedeeming ? effectivePointsToRedeem : 0,
-          discountRupees: redemptionResult.discountRupees,
-          finalPayable: redemptionResult.finalPayableAmount,
-          pointsEarned: earningResult.pointsEarned,
-          newBalance: estimatedNewBalance,
-          paymentMethod,
-          earningTxn: res.earningTxn,
-          redemptionTxn: res.redemptionTxn,
-          timestamp: new Date().toISOString(),
-        });
-
-        setActiveCustomer({
-          ...updated,
-          currentPointsBalance: estimatedNewBalance,
-        });
-      }
-    } finally {
-      setIsProcessing(false);
+      // Keep wallet pre-selected on this customer
+      setSelectedCustomerIdForWallet(activeCustomer.id);
     }
   };
 
-  const handleStartNextTransaction = () => {
-    setCompletedReceipt(null);
-    setBillReference(`POS-${selectedStore.id}-${Math.floor(Math.random() * 8999 + 1000)}`);
-    setPurchaseAmount(2000);
-    setPointsToRedeemInput(0);
-    setIsRedeeming(false);
-    setPaymentSimulateStatus('completed');
-  };
-
-  const handleQuickRegister = (e: React.FormEvent) => {
+  // Register New Customer
+  const handleRegisterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!registerName.trim() || !mobileQuery.trim()) return;
+    if (!newCustName || !newCustMobile) return;
 
-    const clean = mobileQuery.replace(/\D/g, '');
+    const cleanMobile = newCustMobile.replace(/\D/g, '');
     const newCust = addCustomer({
-      name: registerName.trim(),
-      mobileNumber: clean,
-      email: `${registerName.toLowerCase().replace(/\s+/g, '.')}@example.com`,
-      tier: 'Classic',
-      city: 'Mumbai',
+      name: newCustName.trim(),
+      mobileNumber: cleanMobile,
+      email: `${newCustName.toLowerCase().replace(/\s+/g, '.')}@example.com`,
+      tier: 'Member',
       status: 'active',
+      city: newCustCity,
     });
 
     setActiveCustomer(newCust);
+    setMobileQuery(newCust.mobileNumber);
     setShowRegisterModal(false);
-    setRegisterName('');
+    setNewCustName('');
+    setNewCustMobile('');
   };
 
+  // Recent customer activity
+  const customerRecentTxns = transactions
+    .filter((t) => t.customerId === activeCustomer?.id)
+    .slice(0, 3);
+
   return (
-    <div className="space-y-8 max-w-6xl mx-auto pb-16">
-      {/* Cashier Terminal Header */}
-      <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 no-print">
-        <div>
-          <div className="flex flex-wrap items-center gap-2 mb-2">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
-              <Store className="w-3.5 h-3.5 text-emerald-700" />
-              <span>Store POS Terminal</span>
-            </div>
-            <select
-              value={selectedStore.id}
-              onChange={(e) => {
-                const found = STORE_LOCATIONS.find((s) => s.id === e.target.value) || STORE_LOCATIONS[0];
-                setSelectedStore(found);
-                setBillReference(`POS-${found.id}-${Math.floor(Math.random() * 8999 + 1000)}`);
-              }}
-              className="px-2.5 py-0.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-full text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
-            >
-              {STORE_LOCATIONS.map((loc) => (
-                <option key={loc.id} value={loc.id}>
-                  {loc.name}
-                </option>
-              ))}
-            </select>
+    <div className="space-y-6 max-w-6xl mx-auto pb-12 animate-fadeIn">
+      {/* 1. Header Bar */}
+      <header className="bg-white rounded-xl p-5 sm:p-6 border border-slate-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <div className="inline-flex items-center gap-2 text-xs font-semibold text-amber-800 uppercase tracking-wider bg-amber-50 px-2.5 py-0.5 rounded border border-amber-200">
+            <Store className="w-3.5 h-3.5" />
+            <span>Physical Boutique Assistant</span>
           </div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-            Cashier Checkout & Loyalty Redemption
+          <h1 className="text-xl sm:text-2xl font-serif text-slate-900 font-normal">
+            Boutique Staff Loyalty Assistant
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Customer lookup, live point calculation, payment collection, and instant receipt issuance.
+          <p className="text-xs text-slate-500">
+            Search customer by mobile, calculate earn points, and apply loyalty redemption discounts.
           </p>
         </div>
 
-        {/* Active Rule Pill */}
-        <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-right shrink-0">
-          <div className="text-[10px] uppercase font-bold text-slate-400">
-            Active Store Loyalty Rule
-          </div>
-          <div className="text-xs font-bold text-slate-900 mt-0.5">
-            Every ₹{config.purchaseThreshold} = {config.pointsPerThreshold} pts (1 pt = ₹{config.pointValue})
-          </div>
-          <div className="text-[11px] text-emerald-700 font-semibold mt-0.5">
-            Max Redemption Cap: {config.maximumRedemptionPercentage}% of bill
-          </div>
-        </div>
-      </div>
-
-      {/* COMPLETED TRANSACTION RECEIPT SCREEN */}
-      {completedReceipt ? (
-        <div className="max-w-xl mx-auto space-y-6">
-          <div
-            id="printable-receipt"
-            className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-300 shadow-md text-xs space-y-5"
+        <div className="flex items-center gap-3">
+          <label className="text-xs text-slate-500 font-medium">Boutique:</label>
+          <select
+            value={storeLocation}
+            onChange={(e) => setStoreLocation(e.target.value)}
+            className="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-800 font-medium focus:outline-hidden focus:ring-2 focus:ring-amber-500/20"
           >
-            {/* Receipt Header */}
-            <div className="text-center pb-5 border-b border-dashed border-slate-300">
-              <div className="font-serif text-lg font-bold tracking-wider text-slate-900">
-                TROVE LABEL
-              </div>
-              <div className="text-[11px] text-slate-500 mt-0.5">{storeLocation}</div>
-              <div className="text-[11px] font-mono text-slate-600 mt-1">
-                Receipt: {completedReceipt.sale.reference} &bull; {new Date(completedReceipt.timestamp).toLocaleString()}
-              </div>
-            </div>
-
-            {/* Customer Details */}
-            <div className="py-2 border-b border-dashed border-slate-200 space-y-1">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Customer:</span>
-                <span className="font-bold text-slate-900">{completedReceipt.customer.name}</span>
-              </div>
-              <div className="flex justify-between font-mono text-[11px]">
-                <span className="text-slate-500">Phone:</span>
-                <span>+91 {completedReceipt.customer.mobileNumber}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Tier:</span>
-                <span className="font-semibold">{completedReceipt.customer.tier} Member</span>
-              </div>
-            </div>
-
-            {/* Financial Breakdown */}
-            <div className="space-y-2 py-2 border-b border-dashed border-slate-300">
-              <div className="flex justify-between text-slate-600">
-                <span>Gross Purchase Amount:</span>
-                <span className="font-semibold text-slate-900">
-                  ₹{completedReceipt.originalBill.toFixed(2)}
-                </span>
-              </div>
-
-              {completedReceipt.pointsRedeemed > 0 && (
-                <div className="flex justify-between text-amber-800 font-semibold">
-                  <span>
-                    Loyalty Reward Discount ({completedReceipt.pointsRedeemed} pts):
-                  </span>
-                  <span>-₹{completedReceipt.discountRupees.toFixed(2)}</span>
-                </div>
-              )}
-
-              <div className="flex justify-between text-sm font-bold text-slate-900 pt-2 border-t border-slate-200">
-                <span>Net Amount Paid:</span>
-                <span className="text-base text-emerald-800 tabular-nums">
-                  ₹{completedReceipt.finalPayable.toFixed(2)}
-                </span>
-              </div>
-
-              <div className="flex justify-between text-[11px] text-slate-500 pt-1">
-                <span>Payment Method:</span>
-                <span className="font-semibold text-slate-700">{completedReceipt.paymentMethod} (Confirmed)</span>
-              </div>
-            </div>
-
-            {/* Loyalty Movement Summary */}
-            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
-              <div className="font-bold text-slate-900 text-xs">
-                Loyalty Account Movement
-              </div>
-
-              {completedReceipt.pointsRedeemed > 0 && (
-                <div className="flex justify-between text-amber-700">
-                  <span>Points Redeemed:</span>
-                  <span className="font-bold">-{completedReceipt.pointsRedeemed} pts</span>
-                </div>
-              )}
-
-              {completedReceipt.pointsEarned > 0 && (
-                <div className="flex justify-between text-emerald-700">
-                  <span>Points Earned on Bill:</span>
-                  <span className="font-bold">+{completedReceipt.pointsEarned} pts</span>
-                </div>
-              )}
-
-              <div className="flex justify-between pt-1.5 border-t border-slate-200 font-bold text-slate-900">
-                <span>Updated Available Balance:</span>
-                <span className="text-emerald-800 font-extrabold">
-                  {completedReceipt.newBalance} pts (₹{(completedReceipt.newBalance * config.pointValue).toFixed(2)})
-                </span>
-              </div>
-            </div>
-
-            <div className="text-center text-[10px] text-slate-400 pt-2">
-              Thank you for shopping at Trove Label. Points valid for {config.expiryMonths} months.
-            </div>
-          </div>
-
-          {/* Action Buttons (Excluded from print) */}
-          <div className="flex flex-col sm:flex-row items-center gap-3 no-print">
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-sm transition-colors flex items-center justify-center gap-2"
-            >
-              <Printer className="w-4 h-4" />
-              <span>Print Receipt</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleStartNextTransaction}
-              className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition-colors flex items-center justify-center gap-2"
-            >
-              <RotateCcw className="w-4 h-4" />
-              <span>Next Transaction</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedCustomerIdForWallet(completedReceipt.customer.id);
-                setCurrentPortal('wallet');
-              }}
-              className="w-full py-3 px-4 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 font-bold text-xs shadow-sm transition-colors flex items-center justify-center gap-2"
-            >
-              <Wallet className="w-4 h-4" />
-              <span>View Customer Wallet</span>
-            </button>
-          </div>
+            <option value="Colaba Flagship Boutique, Mumbai">Colaba Flagship, Mumbai</option>
+            <option value="Khan Market Boutique, Delhi">Khan Market, Delhi</option>
+            <option value="Indiranagar Concept Store, Bengaluru">Indiranagar, Bengaluru</option>
+            <option value="Ashwem Beach Resort Store, Goa">Ashwem Beach, Goa</option>
+          </select>
         </div>
-      ) : (
-        /* MAIN CASHIER INTERACTION WORKFLOW */
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 no-print">
-          {/* Left Column: Customer Identification (5 cols) */}
-          <div className="lg:col-span-5 space-y-6">
-            {/* Step 1: Customer Lookup */}
-            <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-800 font-bold text-xs flex items-center justify-center">
-                    1
-                  </span>
-                  <h2 className="text-sm font-bold text-slate-900">
-                    Customer Lookup
-                  </h2>
+      </header>
+
+      {/* Main Grid: Staff Form on Left, Receipt / Summary on Right */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Left Column: 4-Step Loyalty Flow */}
+        <div className="lg:col-span-7 space-y-6">
+          {/* STEP 1: Customer Lookup */}
+          <section className="bg-white rounded-xl p-5 sm:p-6 border border-slate-200 shadow-2xs space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-6 h-6 rounded-full bg-slate-900 text-white text-xs font-semibold flex items-center justify-center">
+                  1
+                </span>
+                <h2 className="font-serif font-semibold text-slate-900 text-base">
+                  Identify Customer
+                </h2>
+              </div>
+              <span className="text-[11px] text-slate-500">Lookup via mobile number</span>
+            </div>
+
+            {/* Search Input */}
+            <form onSubmit={handleSearch} className="flex gap-2">
+              <div className="relative flex-1">
+                <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-mono">
+                  +91
+                </span>
+                <input
+                  type="text"
+                  value={mobileQuery}
+                  onChange={(e) => setMobileQuery(e.target.value)}
+                  placeholder="Enter 10-digit mobile number"
+                  className="w-full pl-11 pr-3 py-2 text-sm bg-slate-50 border border-slate-300 rounded-lg focus:outline-hidden focus:bg-white focus:ring-2 focus:ring-amber-500/20 text-slate-900 font-mono"
+                />
+              </div>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium rounded-lg transition-colors cursor-pointer"
+              >
+                Search
+              </button>
+            </form>
+
+            {/* Quick Demo Customer Selector */}
+            <div className="pt-1 flex flex-wrap items-center gap-1.5 text-xs">
+              <span className="text-slate-400 text-[11px]">Demo Presets:</span>
+              {customers.slice(0, 3).map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => handleSelectQuickCustomer(c)}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${
+                    activeCustomer?.id === c.id
+                      ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                  }`}
+                >
+                  {c.name.split(' ')[0]} ({c.currentPointsBalance} pts)
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setShowRegisterModal(true)}
+                className="px-2 py-1 rounded-md text-xs text-amber-800 hover:text-amber-950 font-medium inline-flex items-center gap-1 cursor-pointer ml-auto"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>New Customer</span>
+              </button>
+            </div>
+
+            {/* Customer Found Card */}
+            {activeCustomer ? (
+              <div className="p-4 rounded-xl bg-amber-50/40 border border-amber-200 flex items-center justify-between">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <UserCheck className="w-4 h-4 text-emerald-600" />
+                    <span className="font-serif font-semibold text-slate-900 text-sm">
+                      {activeCustomer.name}
+                    </span>
+                    <span className="text-[11px] text-slate-500 font-mono">
+                      +91 {activeCustomer.mobileNumber}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600">
+                    City: {activeCustomer.city || 'Mumbai'} &bull; Status: Active Member
+                  </p>
                 </div>
-                <span className="text-[11px] text-slate-400">Mobile ID</span>
+
+                <div className="text-right">
+                  <div className="text-xl font-semibold text-slate-900 font-mono">
+                    {activeCustomer.currentPointsBalance}{' '}
+                    <span className="text-xs font-normal text-slate-500">pts</span>
+                  </div>
+                  <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                    Worth ₹{activeCustomer.currentPointsBalance * (config.pointValue || 1)}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 rounded-xl bg-slate-50 border border-dashed border-slate-300 text-center space-y-2">
+                <div className="flex items-center justify-center gap-2 text-slate-500 text-xs">
+                  <UserX className="w-4 h-4 text-slate-400" />
+                  <span>No customer found matching "{mobileQuery}"</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowRegisterModal(true)}
+                  className="text-xs text-amber-800 font-medium hover:underline inline-flex items-center gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Register this mobile number as a new member</span>
+                </button>
+              </div>
+            )}
+          </section>
+
+          {/* STEP 2: Enter Purchase Amount */}
+          <section className="bg-white rounded-xl p-5 sm:p-6 border border-slate-200 shadow-2xs space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-6 h-6 rounded-full bg-slate-900 text-white text-xs font-semibold flex items-center justify-center">
+                  2
+                </span>
+                <h2 className="font-serif font-semibold text-slate-900 text-base">
+                  Purchase Amount
+                </h2>
+              </div>
+              <span className="text-[11px] text-slate-500">Gross bill before loyalty</span>
+            </div>
+
+            <div className="space-y-3">
+              <div className="relative">
+                <span className="absolute left-3 top-2.5 text-slate-400 font-serif text-sm">
+                  ₹
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  step="50"
+                  value={purchaseAmount || ''}
+                  onChange={(e) => setPurchaseAmount(Number(e.target.value) || 0)}
+                  placeholder="0.00"
+                  className="w-full pl-8 pr-3 py-2 text-base font-semibold text-slate-900 bg-slate-50 border border-slate-300 rounded-lg focus:outline-hidden focus:bg-white focus:ring-2 focus:ring-amber-500/20 font-mono"
+                />
               </div>
 
-              <form onSubmit={handleSearch} className="space-y-3">
-                <label className="block text-xs font-semibold text-slate-700">
-                  Mobile Number (10 digits)
-                </label>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <span className="absolute left-3 top-2.5 text-slate-400 font-semibold text-xs">
-                      +91
-                    </span>
-                    <input
-                      type="tel"
-                      value={mobileQuery}
-                      onChange={(e) => setMobileQuery(e.target.value)}
-                      placeholder="9820123456"
-                      className="w-full pl-11 pr-3 py-2 text-sm font-bold text-slate-900 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-none"
-                    />
-                  </div>
+              {/* Quick Bill Amount Pills */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-slate-400 text-[11px]">Example Bills:</span>
+                {[1500, 2500, 4200, 7500].map((amt) => (
                   <button
-                    type="submit"
-                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-colors shrink-0"
+                    key={amt}
+                    type="button"
+                    onClick={() => setPurchaseAmount(amt)}
+                    className={`px-2.5 py-1 rounded-md text-xs font-mono font-medium transition-colors cursor-pointer ${
+                      purchaseAmount === amt
+                        ? 'bg-slate-900 text-white'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                    }`}
                   >
-                    Search
+                    ₹{amt.toLocaleString('en-IN')}
+                  </button>
+                ))}
+              </div>
+
+              {/* Points to be Earned Callout */}
+              <div className="p-3 rounded-lg bg-emerald-50/70 border border-emerald-200 text-xs text-emerald-900 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Coins className="w-4 h-4 text-emerald-600" />
+                  <span>
+                    Points to be earned from this bill:
+                  </span>
+                </div>
+                <span className="font-bold text-emerald-800 text-sm font-mono">
+                  +{earningCalc.pointsEarned} pts
+                </span>
+              </div>
+            </div>
+          </section>
+
+          {/* STEP 3: Redeem Points */}
+          <section className="bg-white rounded-xl p-5 sm:p-6 border border-slate-200 shadow-2xs space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-6 h-6 rounded-full bg-slate-900 text-white text-xs font-semibold flex items-center justify-center">
+                  3
+                </span>
+                <h2 className="font-serif font-semibold text-slate-900 text-base">
+                  Redeem Rewards Points
+                </h2>
+              </div>
+              <label className="inline-flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isRedeeming}
+                  onChange={(e) => setIsRedeeming(e.target.checked)}
+                  className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 w-4 h-4 cursor-pointer"
+                />
+                <span className="text-xs font-medium text-slate-700">Apply Points</span>
+              </label>
+            </div>
+
+            {isRedeeming ? (
+              <div className="space-y-3 pt-1">
+                <div className="flex items-center justify-between text-xs text-slate-600">
+                  <span>Available to redeem: <strong>{customerAvailablePoints} pts</strong> (₹{customerAvailablePoints})</span>
+                  <span>Max allowable: <strong>{redemptionValidation.maxAllowedPoints} pts</strong> (30% cap)</span>
+                </div>
+
+                {/* Preset Redemption Buttons */}
+                <div className="grid grid-cols-4 gap-2">
+                  {[50, 100, 200].map((pts) => {
+                    const isDisabled = pts > customerAvailablePoints || pts > redemptionValidation.maxAllowedPoints;
+                    return (
+                      <button
+                        key={pts}
+                        type="button"
+                        disabled={isDisabled}
+                        onClick={() => setPointsToRedeemInput(pts)}
+                        className={`py-2 px-2 rounded-lg text-xs font-medium transition-colors cursor-pointer border ${
+                          pointsToRedeemInput === pts
+                            ? 'bg-amber-100 border-amber-400 text-amber-900'
+                            : isDisabled
+                            ? 'bg-slate-50 border-slate-200 text-slate-300 cursor-not-allowed'
+                            : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'
+                        }`}
+                      >
+                        {pts} pts (-₹{pts})
+                      </button>
+                    );
+                  })}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const maxPossible = Math.min(
+                        customerAvailablePoints,
+                        redemptionValidation.maxAllowedPoints
+                      );
+                      setPointsToRedeemInput(maxPossible);
+                    }}
+                    className="py-2 px-2 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-800 transition-colors cursor-pointer"
+                  >
+                    Max Allowed
                   </button>
                 </div>
-              </form>
 
-              {/* Quick Preset Member Selector */}
-              <div className="pt-3 border-t border-slate-100">
-                <div className="text-[11px] font-semibold text-slate-500 mb-2">
-                  Quick Member Presets:
+                {/* Points Input */}
+                <div className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <label className="text-[11px] text-slate-500 font-medium">Custom Points:</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max={customerAvailablePoints}
+                      value={pointsToRedeemInput || ''}
+                      onChange={(e) => setPointsToRedeemInput(Number(e.target.value) || 0)}
+                      className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-300 rounded-lg focus:outline-hidden focus:bg-white text-slate-900 font-mono"
+                    />
+                  </div>
+
+                  <div className="flex-1 text-right">
+                    <label className="text-[11px] text-slate-500 font-medium">Discount Value:</label>
+                    <div className="text-lg font-bold text-emerald-700 font-mono pt-1">
+                      -₹{redemptionValidation.discountRupees.toFixed(2)}
+                    </div>
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {customers.slice(0, 4).map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => handleSelectQuickCustomer(c)}
-                      className={`text-[11px] px-2.5 py-1 rounded-lg font-semibold transition-all ${
-                        activeCustomer?.id === c.id
-                          ? 'bg-emerald-700 text-white shadow-xs'
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                      }`}
-                    >
-                      {c.name.split(' ')[0]} ({c.currentPointsBalance} pts)
-                    </button>
-                  ))}
+
+                {!redemptionValidation.isValid && redemptionPoints > 0 && (
+                  <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
+                    <span>{redemptionValidation.errorMessage}</span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500 italic">
+                No points being redeemed. Customer will pay the full purchase amount and accumulate points.
+              </p>
+            )}
+          </section>
+
+          {/* STEP 4: Confirm Loyalty Transaction */}
+          <section className="bg-white rounded-xl p-5 sm:p-6 border border-slate-200 shadow-2xs space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-6 h-6 rounded-full bg-slate-900 text-white text-xs font-semibold flex items-center justify-center">
+                  4
+                </span>
+                <h2 className="font-serif font-semibold text-slate-900 text-base">
+                  Confirm Transaction
+                </h2>
+              </div>
+              <span className="text-[11px] text-slate-500">Record to unified ledger</span>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
+              <div className="flex justify-between text-slate-600">
+                <span>Gross Purchase Amount:</span>
+                <span className="font-mono font-medium">₹{purchaseAmount.toLocaleString('en-IN')}</span>
+              </div>
+
+              {isRedeeming && redemptionValidation.pointsToRedeem > 0 && (
+                <div className="flex justify-between text-emerald-700 font-medium">
+                  <span>Loyalty Discount ({redemptionValidation.pointsToRedeem} pts):</span>
+                  <span className="font-mono">-₹{redemptionValidation.discountRupees.toFixed(2)}</span>
                 </div>
+              )}
+
+              <div className="border-t border-slate-200 pt-2 flex justify-between text-sm font-bold text-slate-900">
+                <span>Net Payable at Store Register:</span>
+                <span className="font-mono text-base text-slate-950">
+                  ₹{redemptionValidation.finalPayableAmount.toLocaleString('en-IN')}
+                </span>
               </div>
             </div>
 
-            {/* Customer Identification Profile */}
-            {activeCustomer ? (
-              <div className="bg-white rounded-2xl p-6 border border-emerald-500/30 shadow-xs space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider">
-                    Member Verified
-                  </span>
-                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
-                    {activeCustomer.tier}
-                  </span>
-                </div>
+            <button
+              type="button"
+              disabled={!activeCustomer || (!redemptionValidation.isValid && redemptionPoints > 0) || purchaseAmount <= 0}
+              onClick={handleConfirmTransaction}
+              className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-sm"
+            >
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              <span>Confirm Loyalty Transaction</span>
+            </button>
+            <p className="text-[11px] text-slate-400 text-center">
+              Payment is collected separately via store register. This updates the customer rewards balance.
+            </p>
+          </section>
+        </div>
 
-                <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-xl bg-slate-900 text-white font-serif font-bold text-base flex items-center justify-center">
-                    {activeCustomer.name.charAt(0)}
+        {/* Right Column: Transaction Outcome / Receipt or Member Summary */}
+        <div className="lg:col-span-5 space-y-6">
+          {completedReceipt ? (
+            /* Completed Transaction Receipt */
+            <div className="bg-white rounded-2xl p-6 border-2 border-emerald-500/30 shadow-lg space-y-5 animate-fadeIn">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                    <CheckCircle2 className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-base font-bold text-slate-900">{activeCustomer.name}</h3>
-                    <p className="text-xs font-mono text-slate-500">
-                      +91 {activeCustomer.mobileNumber} &bull; {activeCustomer.city || 'India'}
+                    <h3 className="font-serif font-semibold text-slate-900 text-base">
+                      Transaction Completed
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      {completedReceipt.timestamp} &bull; {storeLocation.split(',')[0]}
                     </p>
                   </div>
                 </div>
 
-                {/* Points Balance Card */}
-                <div className="p-4 rounded-xl bg-slate-900 text-white flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">
-                      Available Points
-                    </span>
-                    <span className="text-2xl font-extrabold text-white tabular-nums">
-                      {activeCustomer.currentPointsBalance} pts
-                    </span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">
-                      Rupee Value
-                    </span>
-                    <span className="text-xl font-bold text-emerald-400 tabular-nums">
-                      ₹{(activeCustomer.currentPointsBalance * config.pointValue).toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Eligibility note */}
-                <div className="pt-2 flex items-center justify-between text-xs text-slate-600">
-                  <span>Redemption status:</span>
-                  {activeCustomer.currentPointsBalance >= config.minimumRedemptionPoints ? (
-                    <span className="font-bold text-emerald-700 flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      Eligible (min {config.minimumRedemptionPoints} pts)
-                    </span>
-                  ) : (
-                    <span className="font-semibold text-amber-700 flex items-center gap-1">
-                      <AlertCircle className="w-3.5 h-3.5" />
-                      Below {config.minimumRedemptionPoints} pts minimum
-                    </span>
-                  )}
-                </div>
-
-                {/* Omnichannel Activity Snippet */}
-                <div className="pt-3 border-t border-slate-100">
-                  <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 mb-2">
-                    <span>Recent Member Activity:</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedCustomerIdForWallet(activeCustomer.id);
-                        setCurrentPortal('wallet');
-                      }}
-                      className="text-emerald-700 hover:underline"
-                    >
-                      Full Wallet &rarr;
-                    </button>
-                  </div>
-                  <div className="space-y-1.5">
-                    {transactions
-                      .filter((t) => t.customerId === activeCustomer.id)
-                      .slice(0, 2)
-                      .map((t) => (
-                        <div
-                          key={t.id}
-                          className="flex items-center justify-between text-[11px] py-1 px-2.5 rounded-lg bg-slate-50 border border-slate-100"
-                        >
-                          <span className="text-slate-600 truncate max-w-[170px]">
-                            {t.source}: {t.notes || t.reference}
-                          </span>
-                          <span
-                            className={`font-bold tabular-nums shrink-0 ${
-                              t.pointsDelta > 0 ? 'text-emerald-700' : 'text-amber-700'
-                            }`}
-                          >
-                            {t.pointsDelta > 0 ? `+${t.pointsDelta}` : t.pointsDelta} pts
-                          </span>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="bg-white rounded-2xl p-6 border border-dashed border-slate-300 text-center space-y-3">
-                <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
-                  <UserX className="w-5 h-5" />
-                </div>
-                <h3 className="text-sm font-bold text-slate-800">No Member Found</h3>
-                <p className="text-xs text-slate-500">
-                  No account matching "+91 {mobileQuery}". Register them to earn rewards.
-                </p>
                 <button
-                  type="button"
-                  onClick={() => setShowRegisterModal(true)}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-colors"
+                  onClick={() => window.print()}
+                  className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs transition-colors cursor-pointer"
+                  title="Print Thermal Receipt"
                 >
-                  Register New Customer
+                  <Printer className="w-4 h-4" />
                 </button>
               </div>
-            )}
-          </div>
 
-          {/* Right Column: Purchase, Redemption, Payment, and Confirm (7 cols) */}
-          <div className="lg:col-span-7 space-y-6">
-            <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs space-y-6">
-              {/* Step 2: Purchase Amount */}
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-800 font-bold text-xs flex items-center justify-center">
-                      2
-                    </span>
-                    <h2 className="text-sm font-bold text-slate-900">
-                      Purchase Details
-                    </h2>
-                  </div>
-                  <span className="text-xs font-mono text-slate-400">{billReference}</span>
+              {/* Receipt Summary */}
+              <div className="space-y-3 text-xs bg-slate-50 p-4 rounded-xl border border-slate-200">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Customer:</span>
+                  <strong className="text-slate-900">{completedReceipt.customer.name}</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Mobile:</span>
+                  <span className="font-mono text-slate-800">+91 {completedReceipt.customer.mobileNumber}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Original Bill:</span>
+                  <span className="font-mono">₹{completedReceipt.originalBill.toLocaleString('en-IN')}</span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                      Purchase Amount (₹)
-                    </label>
-                    <div className="relative">
-                      <span className="absolute left-3.5 top-2.5 text-slate-400 font-bold">₹</span>
-                      <input
-                        type="number"
-                        min="1"
-                        step="50"
-                        value={purchaseAmount}
-                        onChange={(e) => setPurchaseAmount(Math.max(0, Number(e.target.value)))}
-                        className="w-full pl-8 pr-3 py-2 text-base font-extrabold text-slate-900 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-none"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                      Quick Presets
-                    </label>
-                    <div className="flex items-center gap-1.5">
-                      {[1000, 2000, 2550, 4500].map((amt) => (
-                        <button
-                          key={amt}
-                          type="button"
-                          onClick={() => setPurchaseAmount(amt)}
-                          className={`text-xs px-2.5 py-2 rounded-xl font-bold transition-all border ${
-                            purchaseAmount === amt
-                              ? 'bg-slate-900 text-white border-slate-900'
-                              : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                          }`}
-                        >
-                          ₹{amt}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Points Earned Preview Box */}
-                <div className="mt-3.5 p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
-                  <div>
-                    <span className="text-slate-500 block">Points to be Earned on this Bill:</span>
-                    <span className="text-base font-extrabold text-emerald-700 tabular-nums">
-                      +{earningResult.pointsEarned} points
-                    </span>
-                    <span className="text-[11px] text-slate-400 ml-1.5">
-                      (Worth ₹{earningResult.monetaryRewardValue.toFixed(2)})
-                    </span>
-                  </div>
-                  {earningResult.remainingTowardsNextThreshold > 0 && (
-                    <div className="text-right text-[11px] text-slate-500">
-                      <span>Add ₹{earningResult.remainingTowardsNextThreshold}</span>
-                      <span className="text-emerald-700 font-bold block">
-                        for +{config.pointsPerThreshold} pts
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Step 3: Redemption */}
-              <div className="pt-5 border-t border-slate-200">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-800 font-bold text-xs flex items-center justify-center">
-                      3
-                    </span>
-                    <h2 className="text-sm font-bold text-slate-900">
-                      Redeem Available Points
-                    </h2>
-                  </div>
-
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <span className="text-xs font-bold text-slate-700">
-                      {isRedeeming ? 'Apply Points' : 'Do Not Redeem'}
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={isRedeeming}
-                      onChange={(e) => setIsRedeeming(e.target.checked)}
-                      disabled={!activeCustomer || currentCustomerBalance < config.minimumRedemptionPoints}
-                      className="sr-only peer"
-                    />
-                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600 peer-disabled:opacity-50"></div>
-                  </label>
-                </div>
-
-                {isRedeeming && (
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <label className="text-xs font-semibold text-slate-700">
-                            Points to Redeem (1 pt = ₹{config.pointValue})
-                          </label>
-                          <button
-                            type="button"
-                            onClick={() => setPointsToRedeemInput(redemptionResult.maxAllowedPoints)}
-                            className="text-[11px] text-emerald-700 font-bold hover:underline"
-                          >
-                            Max ({redemptionResult.maxAllowedPoints} pts)
-                          </button>
-                        </div>
-                        <input
-                          type="number"
-                          min="0"
-                          step="10"
-                          value={pointsToRedeemInput}
-                          onChange={(e) => setPointsToRedeemInput(Math.max(0, Number(e.target.value)))}
-                          className="w-full px-3 py-2 border border-slate-300 rounded-xl font-bold text-slate-900 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-none"
-                        />
-                        {/* Quick Point Selector Pills */}
-                        <div className="flex items-center gap-1.5 mt-2">
-                          {[50, 100, 200].map((preset) => (
-                            <button
-                              key={preset}
-                              type="button"
-                              onClick={() => setPointsToRedeemInput(Math.min(preset, redemptionResult.maxAllowedPoints))}
-                              className="text-[10px] px-2 py-0.5 rounded-md font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
-                            >
-                              {preset} pts
-                            </button>
-                          ))}
-                          <button
-                            type="button"
-                            onClick={() => setPointsToRedeemInput(redemptionResult.maxAllowedPoints)}
-                            className="text-[10px] px-2 py-0.5 rounded-md font-bold bg-amber-100 hover:bg-amber-200 text-amber-900 transition-colors"
-                          >
-                            Max ({redemptionResult.maxAllowedPoints})
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="p-3 bg-amber-50 rounded-xl border border-amber-200/80 flex flex-col justify-center">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-amber-800">
-                          Instant Bill Discount
-                        </span>
-                        <span className="text-lg font-extrabold text-amber-950 tabular-nums">
-                          -₹{redemptionResult.discountRupees.toFixed(2)}
-                        </span>
-                        <span className="text-[10px] text-amber-700 mt-0.5">
-                          Policy cap: Max {config.maximumRedemptionPercentage}% of bill (₹{redemptionResult.maxAllowedDiscount.toFixed(2)})
-                        </span>
-                      </div>
-                    </div>
-
-                    {!redemptionResult.isValid && (
-                      <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2">
-                        <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                        <div>
-                          <strong>Validation Blocked:</strong> {redemptionResult.errorMessage}
-                        </div>
-                      </div>
-                    )}
+                {completedReceipt.pointsRedeemed > 0 && (
+                  <div className="flex justify-between text-emerald-700 font-medium">
+                    <span>Points Redeemed:</span>
+                    <span className="font-mono">-{completedReceipt.pointsRedeemed} pts (-₹{completedReceipt.discountRupees})</span>
                   </div>
                 )}
-              </div>
 
-              {/* Step 4: Payment Collection */}
-              <div className="pt-5 border-t border-slate-200 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-800 font-bold text-xs flex items-center justify-center">
-                      4
-                    </span>
-                    <h2 className="text-sm font-bold text-slate-900">
-                      Payment Collection Method
-                    </h2>
-                  </div>
-                  <span className="text-xs text-slate-500">Amount Due: ₹{redemptionResult.finalPayableAmount.toFixed(2)}</span>
+                <div className="border-t border-slate-200 pt-2 flex justify-between font-bold text-slate-900">
+                  <span>Net Paid at Store:</span>
+                  <span className="font-mono text-sm">₹{completedReceipt.finalPayable.toLocaleString('en-IN')}</span>
                 </div>
 
-                <div className="grid grid-cols-3 gap-3">
-                  {[
-                    { id: 'UPI', label: 'UPI / Dynamic QR', icon: QrCode },
-                    { id: 'Card', label: 'Credit / Debit Card', icon: CreditCard },
-                    { id: 'Cash', label: 'Cash Tendered', icon: Banknote },
-                  ].map((m) => {
-                    const Icon = m.icon;
-                    return (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => setPaymentMethod(m.id as PaymentMethod)}
-                        className={`p-3 rounded-xl border text-left transition-all ${
-                          paymentMethod === m.id
-                            ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
-                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                        }`}
-                      >
-                        <Icon className={`w-5 h-5 mb-1 ${paymentMethod === m.id ? 'text-emerald-400' : 'text-slate-500'}`} />
-                        <div className="text-xs font-bold">{m.label}</div>
-                      </button>
-                    );
-                  })}
+                <div className="flex justify-between text-emerald-700 font-medium border-t border-slate-200 pt-2">
+                  <span>Points Earned on Bill:</span>
+                  <span className="font-mono">+{completedReceipt.pointsEarned} pts</span>
                 </div>
 
-                {/* Simulated Payment Interaction Details */}
-                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-slate-700">Simulate Payment Gateway Outcome:</span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setPaymentSimulateStatus('completed')}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                          paymentSimulateStatus === 'completed'
-                            ? 'bg-emerald-600 text-white'
-                            : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
-                        }`}
-                      >
-                        Success (Paid)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPaymentSimulateStatus('failed')}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                          paymentSimulateStatus === 'failed'
-                            ? 'bg-rose-600 text-white'
-                            : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
-                        }`}
-                      >
-                        Failure (Declined)
-                      </button>
-                    </div>
-                  </div>
-
-                  {paymentMethod === 'UPI' && (
-                    <div className="text-[11px] text-slate-500 pt-1">
-                      Dynamic UPI QR generated for ₹{redemptionResult.finalPayableAmount.toFixed(2)} (VPA: <code className="font-mono">trovelabel@icici</code>).
-                    </div>
-                  )}
-                  {paymentMethod === 'Card' && (
-                    <div className="text-[11px] text-slate-500 pt-1">
-                      POS Terminal prompt: Waiting for card tap / chip insert for ₹{redemptionResult.finalPayableAmount.toFixed(2)}.
-                    </div>
-                  )}
-                  {paymentMethod === 'Cash' && (
-                    <div className="text-[11px] text-slate-500 pt-1">
-                      Cash tender: Verify currency notes collected before finalizing.
-                    </div>
-                  )}
+                <div className="flex justify-between font-bold text-amber-900 bg-amber-50 p-2 rounded-lg border border-amber-200">
+                  <span>New Points Balance:</span>
+                  <span className="font-mono text-sm">{completedReceipt.newBalance} pts (₹{completedReceipt.newBalance})</span>
                 </div>
               </div>
 
-              {/* Step 5: Final Settlement & Confirm */}
-              <div className="pt-5 border-t border-slate-200 space-y-4">
-                <div className="bg-slate-900 text-white rounded-xl p-4 space-y-2 text-xs">
-                  <div className="flex justify-between text-slate-400">
-                    <span>Subtotal / Original Bill:</span>
-                    <span className="text-white font-semibold">₹{purchaseAmount.toFixed(2)}</span>
-                  </div>
-
-                  {isRedeeming && redemptionResult.isValid && effectivePointsToRedeem > 0 && (
-                    <div className="flex justify-between text-amber-300 font-semibold">
-                      <span>Points Discount ({effectivePointsToRedeem} pts):</span>
-                      <span>-₹{redemptionResult.discountRupees.toFixed(2)}</span>
-                    </div>
-                  )}
-
-                  <div className="pt-2 border-t border-slate-800 flex justify-between items-baseline">
-                    <span className="font-bold text-slate-200">Payable Balance:</span>
-                    <span className="text-2xl font-extrabold text-white tabular-nums">
-                      ₹{redemptionResult.finalPayableAmount.toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Confirm Button */}
+              {/* Action Buttons */}
+              <div className="space-y-2 pt-2">
                 <button
                   type="button"
-                  onClick={handleConfirmTransaction}
-                  disabled={
-                    !activeCustomer ||
-                    purchaseAmount <= 0 ||
-                    (isRedeeming && effectivePointsToRedeem > 0 && !redemptionResult.isValid) ||
-                    isProcessing
-                  }
-                  className={`w-full py-3.5 px-6 rounded-xl text-xs font-bold shadow-sm transition-all flex items-center justify-center gap-2 ${
-                    activeCustomer && purchaseAmount > 0 && (!isRedeeming || redemptionResult.isValid) && !isProcessing
-                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer shadow-emerald-700/20'
-                      : 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
-                  }`}
+                  onClick={() => {
+                    setSelectedCustomerIdForWallet(completedReceipt.customer.id);
+                    setCurrentPortal('wallet');
+                  }}
+                  className="w-full py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
                 >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>
-                    {isProcessing ? 'Processing Transaction...' : 'Complete Sale & Award Loyalty Points'}
-                  </span>
+                  <Wallet className="w-4 h-4" />
+                  <span>View in Customer Wallet</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCompletedReceipt(null);
+                    setPurchaseAmount(2500);
+                  }}
+                  className="w-full py-2 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Next Customer</span>
                 </button>
               </div>
             </div>
-          </div>
+          ) : (
+            /* Live Transaction Preview & Recent Activity */
+            <div className="space-y-6">
+              <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-2xs space-y-4">
+                <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
+                  <Sparkles className="w-4 h-4 text-amber-600" />
+                  <h3 className="font-serif font-semibold text-slate-900 text-sm">
+                    Live Calculation Preview
+                  </h3>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <div className="flex justify-between text-slate-600">
+                    <span>Customer Available Points:</span>
+                    <span className="font-mono font-medium">{customerAvailablePoints} pts</span>
+                  </div>
+
+                  <div className="flex justify-between text-slate-600">
+                    <span>Purchase Amount:</span>
+                    <span className="font-mono font-medium">₹{purchaseAmount.toLocaleString('en-IN')}</span>
+                  </div>
+
+                  {isRedeeming && redemptionPoints > 0 && (
+                    <div className="flex justify-between text-emerald-700">
+                      <span>Redemption Discount:</span>
+                      <span className="font-mono">-₹{redemptionValidation.discountRupees.toFixed(2)}</span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between text-emerald-700">
+                    <span>Estimated Points Earned:</span>
+                    <span className="font-mono font-bold">+{earningCalc.pointsEarned} pts</span>
+                  </div>
+
+                  <div className="border-t border-slate-200 pt-2 flex justify-between font-bold text-slate-900">
+                    <span>Estimated New Balance:</span>
+                    <span className="font-mono text-amber-900">
+                      {Math.max(0, customerAvailablePoints - (isRedeeming ? redemptionValidation.pointsToRedeem : 0) + earningCalc.pointsEarned)} pts
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Customer Recent Activity */}
+              {activeCustomer && (
+                <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-2xs space-y-3">
+                  <h3 className="font-serif font-semibold text-slate-900 text-sm">
+                    Recent Customer Activity
+                  </h3>
+                  {customerRecentTxns.length > 0 ? (
+                    <div className="space-y-2">
+                      {customerRecentTxns.map((txn) => (
+                        <div
+                          key={txn.id}
+                          className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 flex items-center justify-between text-xs"
+                        >
+                          <div>
+                            <span className="font-medium text-slate-800">
+                              {txn.source === 'Online' ? 'Online Store' : 'Boutique Store'}
+                            </span>
+                            <span className="text-[10px] text-slate-400 block">
+                              {new Date(txn.createdAt).toLocaleDateString('en-IN')}
+                            </span>
+                          </div>
+                          <span
+                            className={`font-mono font-bold ${
+                              txn.pointsDelta > 0 ? 'text-emerald-700' : 'text-rose-700'
+                            }`}
+                          >
+                            {txn.pointsDelta > 0 ? `+${txn.pointsDelta}` : txn.pointsDelta} pts
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400 italic">No recent transactions recorded yet.</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
-      {/* QUICK REGISTER MODAL */}
+      {/* Quick Register Modal */}
       {showRegisterModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-xs no-print">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200">
-            <h3 className="text-base font-bold text-slate-900 mb-2">Register In-Store Member</h3>
-            <p className="text-xs text-slate-500 mb-4">
-              Enter customer's name to register their loyalty account under mobile +91 {mobileQuery}.
-            </p>
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-slate-200 space-y-4 animate-scaleUp">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="font-serif font-semibold text-slate-900 text-base">
+                Register New Customer
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowRegisterModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
 
-            <form onSubmit={handleQuickRegister} className="space-y-4 text-xs">
+            <form onSubmit={handleRegisterSubmit} className="space-y-3 text-xs">
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Customer Full Name *</label>
+                <label className="block text-slate-700 font-medium mb-1">Customer Name:</label>
                 <input
                   type="text"
                   required
-                  autoFocus
-                  value={registerName}
-                  onChange={(e) => setRegisterName(e.target.value)}
-                  placeholder="e.g. Maya Varma"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-none"
+                  value={newCustName}
+                  onChange={(e) => setNewCustName(e.target.value)}
+                  placeholder="e.g. Maya Sen"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Mobile Lookup Number</label>
+                <label className="block text-slate-700 font-medium mb-1">Mobile Number (+91):</label>
                 <input
                   type="text"
-                  disabled
-                  value={`+91 ${mobileQuery}`}
-                  className="w-full px-3 py-2 border border-slate-200 bg-slate-50 rounded-xl font-mono text-slate-600"
+                  required
+                  value={newCustMobile}
+                  onChange={(e) => setNewCustMobile(e.target.value)}
+                  placeholder="e.g. 9833445566"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 font-mono"
                 />
               </div>
 
-              <div className="pt-3 flex justify-end gap-2">
+              <div>
+                <label className="block text-slate-700 font-medium mb-1">City:</label>
+                <input
+                  type="text"
+                  value={newCustCity}
+                  onChange={(e) => setNewCustCity(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setShowRegisterModal(false)}
-                  className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100"
+                  className="px-3 py-2 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                  className="px-4 py-2 rounded-lg bg-slate-900 text-white font-medium hover:bg-slate-800 cursor-pointer"
                 >
-                  Register & Proceed
+                  Save &amp; Continue
                 </button>
               </div>
             </form>

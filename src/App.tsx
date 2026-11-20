@@ -2,10 +2,11 @@ import React from 'react';
 import { LoyaltyProvider, useLoyalty } from './context/LoyaltyContext';
 import { Header } from './components/layout/Header';
 import { NotificationToast } from './components/layout/NotificationToast';
-import { AdminLayout } from './components/admin/AdminLayout';
+import { ProgrammeOverview } from './components/overview/ProgrammeOverview';
 import { StoreCashier } from './components/store/StoreCashier';
-import { OnlineShopifySimulator } from './components/online/OnlineShopifySimulator';
+import { OnlineShop } from './components/online/OnlineShop';
 import { CustomerWallet } from './components/wallet/CustomerWallet';
+import { AdminLayout } from './components/admin/AdminLayout';
 
 const MainContent: React.FC = () => {
   const { currentPortal } = useLoyalty();
@@ -15,10 +16,11 @@ const MainContent: React.FC = () => {
       <Header />
 
       <main className="flex-1 py-6 sm:py-8 px-4 sm:px-6 lg:px-8 max-w-7xl w-full mx-auto">
-        {currentPortal === 'admin' && <AdminLayout />}
+        {currentPortal === 'overview' && <ProgrammeOverview />}
         {currentPortal === 'store' && <StoreCashier />}
-        {currentPortal === 'online' && <OnlineShopifySimulator />}
+        {currentPortal === 'online' && <OnlineShop />}
         {currentPortal === 'wallet' && <CustomerWallet />}
+        {currentPortal === 'admin' && <AdminLayout />}
       </main>
 
       {/* Accessible Footer */}
@@ -29,11 +31,11 @@ const MainContent: React.FC = () => {
               TROVE LABEL
             </span>
             <span className="text-slate-300">|</span>
-            <span>Custom Omnichannel Loyalty Platform Prototype</span>
+            <span>Unified Customer Rewards Programme Concept</span>
           </div>
 
           <div className="text-slate-400 text-center sm:text-right">
-            Dynamic Rules Engine &bull; Store POS &bull; Shopify Webhooks &bull; Unified Wallet
+            Omnichannel Loyalty &bull; Colaba Boutique &bull; Shopify Online Storefront &bull; Shared Member Wallet
           </div>
         </div>
       </footer>
