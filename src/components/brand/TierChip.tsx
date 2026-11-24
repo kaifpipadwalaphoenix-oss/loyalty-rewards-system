@@ -4,7 +4,7 @@ import { TierBadge, type TierBadgeProps, type TierAccent, resolveTierAccent } fr
 export type { TierAccent, TierBadgeProps };
 export { resolveTierAccent };
 
-export interface TierChipProps extends TierBadgeProps {}
+export type TierChipProps = TierBadgeProps;
 
 /**
  * TierChip - Backwards-compatible wrapper delegating to TierBadge.
