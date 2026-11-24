@@ -1,0 +1,107 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+@theme {
+  --font-serif: "Playfair Display", Georgia, serif;
+  --font-sans: "Work Sans Variable", "Work Sans", system-ui, -apple-system, sans-serif;
+
+  --color-ink-900: var(--ink-900);
+  --color-ink-700: var(--ink-700);
+  --color-ink-500: var(--ink-500);
+  --color-ink-400: var(--ink-400);
+  --color-ink-300: var(--ink-300);
+  --color-sand-200: var(--sand-200);
+  --color-sand-100: var(--sand-100);
+  --color-shell-50: var(--shell-50);
+  --color-blush-200: var(--blush-200);
+  --color-blush-100: var(--blush-100);
+  --color-peach-300: var(--peach-300);
+  --color-coral-600: var(--coral-600);
+  --color-tide-900: var(--tide-900);
+  --color-tide-800: var(--tide-800);
+  --color-tide-600: var(--tide-600);
+  --color-tide-100: var(--tide-100);
+  --color-sun-400: var(--sun-400);
+
+  /* Theme aliases used across components (TC-001) */
+  --color-charcoal: var(--ink-900);
+  --color-charcoal-muted: var(--ink-500);
+  --color-sand: var(--sand-100);
+  --color-sand-50: var(--shell-50);
+  --color-sand-card: var(--shell-50);
+  --color-sand-subtle: var(--sand-200);
+  --color-sand-muted: var(--sand-200);
+  --color-tide: var(--tide-800);
+  --color-terracotta: var(--coral-600);
+
+  /* Direct primitive mappings for semantic tokens to prevent self-reference */
+  --color-bg-base: var(--white);
+  --color-bg-app: var(--shell-50);
+  --color-surface: var(--white);
+  --color-surface-muted: var(--sand-100);
+  --color-surface-brand: var(--blush-200);
+  --color-surface-celebrate: var(--peach-300);
+  --color-surface-inverse: var(--tide-800);
+  --color-text-base: var(--ink-900);
+  --color-text-muted: var(--ink-500);
+  --color-text-subtle: var(--ink-300);
+  --color-text-inverse: var(--white);
+  --color-text-inverse-muted: var(--blush-200);
+  --color-text-accent: var(--coral-600);
+  --color-border-base: var(--sand-200);
+  --color-border-strong: var(--ink-400);
+  --color-focus: var(--tide-800);
+
+  --shadow-overlay: var(--shadow-overlay);
+  --shadow-card: var(--shadow-card);
+}
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    font-family: var(--font-sans);
+    color: var(--color-text);
+    background-color: var(--color-bg);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+  }
+
+  /* Accessible focus ring */
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+
+  /* Tabular numbers for currency and points */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+
+  /* Selection highlight */
+  ::selection {
+    background-color: var(--blush-200);
+    color: var(--ink-900);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

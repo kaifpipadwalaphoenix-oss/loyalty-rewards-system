@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 480" width="100%" height="100%">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F3D4A" />
+      <stop offset="100%" stop-color="#0B2E38" />
+    </linearGradient>
+  </defs>
+  <rect width="400" height="480" fill="url(#grad)" />
+  <g><path d="M200 130l10 35 35 10-35 10-10 35-10-35-35-10 35-10z" fill="#F2C0AE" opacity="0.85" />
+            <path d="M235 220l5 15 15 5-15 5-5 15-5-15-15-5 15-5z" fill="#F2C0AE" opacity="0.6" /></g>
+  <path d="M40 370c40-10 60 10 100 0s60-10 100 0 60 10 100 0" fill="none" stroke="#F2C0AE" stroke-width="1.5" opacity="0.4" />
+  <text x="200" y="415" font-family="Georgia, serif" font-size="22" font-style="italic" fill="#141414" text-anchor="middle" letter-spacing="1">Resort Weekend Package</text>
+  <text x="200" y="442" font-family="system-ui, sans-serif" font-size="11" font-weight="600" text-transform="uppercase" fill="#5E5A57" text-anchor="middle" letter-spacing="2.5">Styling + ₹3,000 Voucher</text>
+</svg>

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 480" width="100%" height="100%">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F8ECE7" />
+      <stop offset="100%" stop-color="#F1DDD6" />
+    </linearGradient>
+  </defs>
+  <rect width="400" height="480" fill="url(#grad)" />
+  <g><path d="M140 140c30-10 90 20 120 0l-10 130c-40 15-80-15-110 0z" fill="#A8432B" opacity="0.3" stroke="#A8432B" stroke-width="2.5" />
+            <path d="M160 160c20 20 40 10 60 30M150 200c25 15 50 10 70 25" stroke="#A8432B" stroke-width="2" stroke-linecap="round" fill="none" /></g>
+  <path d="M40 370c40-10 60 10 100 0s60-10 100 0 60 10 100 0" fill="none" stroke="#A8432B" stroke-width="1.5" opacity="0.4" />
+  <text x="200" y="415" font-family="Georgia, serif" font-size="22" font-style="italic" fill="#141414" text-anchor="middle" letter-spacing="1">Signature Printed Sarong</text>
+  <text x="200" y="442" font-family="system-ui, sans-serif" font-size="11" font-weight="600" text-transform="uppercase" fill="#5E5A57" text-anchor="middle" letter-spacing="2.5">Handcrafted Resort Piece</text>
+</svg>

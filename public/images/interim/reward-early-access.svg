@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 480" width="100%" height="100%">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F1DDD6" />
+      <stop offset="100%" stop-color="#E3EEF0" />
+    </linearGradient>
+  </defs>
+  <rect width="400" height="480" fill="url(#grad)" />
+  <g><circle cx="200" cy="180" r="48" fill="#0F3D4A" opacity="0.85" />
+            <path d="M200 110v16M200 234v16M130 180h16M254 180h16M150 130l12 12M238 218l12 12M150 230l12-12M238 142l12-12" stroke="#0F3D4A" stroke-width="2.5" stroke-linecap="round" /></g>
+  <path d="M40 370c40-10 60 10 100 0s60-10 100 0 60 10 100 0" fill="none" stroke="#0F3D4A" stroke-width="1.5" opacity="0.4" />
+  <text x="200" y="415" font-family="Georgia, serif" font-size="22" font-style="italic" fill="#141414" text-anchor="middle" letter-spacing="1">New Drop Preview</text>
+  <text x="200" y="442" font-family="system-ui, sans-serif" font-size="11" font-weight="600" text-transform="uppercase" fill="#5E5A57" text-anchor="middle" letter-spacing="2.5">Priority Collection Access</text>
+</svg>
