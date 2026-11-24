@@ -53,7 +53,10 @@ export const PointsValue: React.FC<PointsValueProps> = ({
     sm: 'text-xs',
     md: 'text-sm',
     lg: 'text-base font-semibold',
-  }[size] || '';
+    card: '',
+    display: '',
+    none: '',
+  }[size] ?? '';
 
   return (
     <span className={cn('tabular-nums font-medium', sizeClasses, className)}>
